@@ -1,0 +1,142 @@
+---
+title: "PM 2.5 Analysis"
+output: html_notebook
+---
+
+```{r}
+rm(list=ls())
+```
+
+
+```{r}
+library(tidyverse)
+library(stringr)
+library(lubridate)
+```
+
+
+
+
+```{r}
+## download and unzip data to working directory
+df1 <- "https://d396qusza40orc.cloudfront.net/exdata%2Fdata%2FNEI_data.zip"
+download.file(df1, "PM25.zip")
+unzip("PM25.zip", exdir = ".")
+```
+```{r}
+## load data
+NEI <- readRDS("summarySCC_PM25.rds")
+SCC <- readRDS("Source_Classification_Code.rds")
+```
+
+```{r}
+## Review data
+head(NEI)
+head(SCC)
+```
+
+1. Have total emissions from PM2.5 decreased in the United States from 1999 to 2008? Using the base plotting system, make a plot showing the total PM2.5 emission from all sources for each of the years 1999, 2002, 2005, and 2008.
+
+```{r}
+## rename Year and change type to factor
+NEI <- NEI %>% rename(Year = year)
+NEI <- NEI %>% mutate(Year=factor(Year))
+
+
+```
+
+
+```{r}
+head(NEI)
+head(SCC)
+```
+```{r}
+## summarize emissions by year and divided it by 1000
+NEITotal <- group_by(NEI,Year) %>% summarize(Emissions = sum(Emissions, na.rm=TRUE)) %>% mutate(Emissions=Emissions/1000)
+head(NEITotal)
+```
+
+1. Have total emissions from PM2.5 decreased in the United States from 1999 to 2008? Using the base plotting system, make a plot showing the total PM2.5 emission from all sources for each of the years 1999, 2002, 2005, and 2008.
+```{r}
+barplot(NEITotal$Emissions, names = NEITotal$Year, xlab = "Year", ylab = expression("Emissions of PM"[25]* " (in kilotons)"), main = expression("Total emissions from PM"[25]* " in US (1999-2008)"), col = c("red", "yellow", "blue", "green"))
+dev.copy(png, file ="plot1.png")
+dev.off()
+```
+2. Have total emissions from PM2.5 decreased in the Baltimore City, Maryland (fips == “24510”) from 1999 to 2008? Use the base plotting system to make a plot answering this question.
+
+Answer: 
+```{r}
+## Filtered fips = Baltimore City and summarized it by emissions ~ year in kilotons
+baltimorefilter <- NEI %>% filter(fips=="24510")
+   
+BaltimoreTotal <- baltimorefilter %>% group_by(Year) %>% summarize(Emissions=sum(Emissions, na.rm = TRUE)/1000)
+
+barplot(BaltimoreTotal$Emissions, names = BaltimoreTotal$Year, 
+        xlab = "Year", ylab = expression("Emissions of PM"[25]* " 
+                                         (in kilotons)"), 
+        main = expression("Baltimore total emissions from PM"[25]* 
+                             " in US (1999-2008)"), col = c("red", "yellow", "blue", "green"))
+dev.copy(png, file ="plot2.png")
+dev.off()
+```
+
+3. Of the four types of sources indicated by the type (point, nonpoint, onroad, nonroad) variable, which of these four sources have seen decreases in emissions from 1999-2008 for Baltimore City? Which have seen increases in emissions from 1999-2008? Use the ggplot2 plotting system to make a plot answer this question.
+```{r} 
+## added type baltimore.  ggplot is divided via facet_wrap
+BaltimoreTotal <- baltimorefilter %>% group_by(Year, type) %>% summarize(Emissions=sum(Emissions, na.rm = TRUE)/1000)
+
+ggplot(data = BaltimoreTotal, aes(x=Year, y=Emissions,color=type))+geom_point()+facet_wrap(vars(type))+
+   ggtitle(expression("Total Baltimore " ~ PM[2.5] ~ "Emissions by Type and Year")) +
+      ylab(expression("Total Baltimore " ~ PM[2.5] ~ "Emissions (in kilotons)")) +
+      xlab("Year") 
+ggsave("plot3.png")
+   
+```
+4. Across the United States, how have emissions from coal combustion-related sources changed from 1999-2008?
+```{r}
+## using stringr "str_detect". Reviewed "coal vs Coal" case sensitive and picked Coal.  
+## coal produce 239 obs vs Coal produced 230 obs 
+
+coalfil <- SCC %>% filter(str_detect(Short.Name, pattern = "Coal"))
+
+coalNEI <- NEI %>% filter(SCC %in% coalfil$SCC)
+
+coalTotal <- coalNEI %>% group_by(Year, type) %>% summarise(Emissions= sum(Emissions, na.rm = TRUE)/1000)
+
+ggplot(data = coalTotal, aes(x=Year, y=Emissions,fill=type))+geom_col()+facet_wrap(vars(type))+
+   ggtitle(expression("Total Coal " ~ PM[2.5] ~ "Emissions by Type and Year")) +
+      ylab(expression("Total Coal " ~ PM[2.5] ~ "Emissions (in kilotons)")) +
+      xlab("Year") 
+ggsave("plot4.png")
+
+```
+5. How have emissions from motor vehicle sources changed from 1999-2008 in Baltimore City?
+```{r}
+baltfips <- NEI %>% select(fips:Year) %>% filter(fips=="24510" & type == "ON-ROAD")
+BaltimoreVehicle <- baltfips %>% group_by(Year, type) %>% summarise(Emissions= sum(Emissions, na.rm = TRUE)/1000)
+
+ggplot(data = BaltimoreVehicle, aes(x=Year, y=Emissions,fill=type))+geom_col()+facet_wrap(vars(type))+
+   ggtitle(expression("Baltimore " ~ PM[2.5] ~ "Motor Vehicle Emissions by Year")) +
+      ylab(expression("Baltimore " ~ PM[2.5] ~ "MV Emissions (in kilotons)")) +
+      xlab("Year") 
+ggsave("plot5.png")
+```
+6. Compare emissions from motor vehicle sources in Baltimore City with emissions from motor vehicle sources in Los Angeles County, California (fips == “06037”). Which city has seen greater changes over time in motor vehicle emissions?
+```{r} 
+Baltimore_LA <- c("24510", "06037")
+BaltLAFil <- NEI %>% filter(fips==Baltimore_LA & type == "ON-ROAD")
+BaltLAveh <- BaltLAFil %>% group_by(Year, fips, type) %>% summarise(Emissions= sum(Emissions, na.rm = TRUE)/1000)
+BaltLAveh <- ungroup(BaltLAveh) %>% mutate(fips = recode(fips,`24510`="Baltimore City",  `06037`="Los Angeles City")) %>% rename(City=fips)
+
+
+
+ggplot(data = BaltLAveh, aes(x=Year, y=Emissions, fill=City))+geom_col()+facet_wrap(vars(City))+
+   ggtitle(expression("Baltimore and Los Angeles" ~ PM[2.5] ~ "Motor Vehicle Emissions by Year")) +
+      labs(x = "Year", y = expression(~PM[2.5]~ "Motor Vehicle Emissions") ) +
+      scale_colour_discrete(name = "City", labels = c("Los Angeles", "Baltimore")) +
+      theme(legend.title = element_text(face = "bold"))
+   
+ggsave("plot5.png")
+```
+
+
